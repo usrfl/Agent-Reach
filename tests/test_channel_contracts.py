@@ -176,6 +176,7 @@ def test_channel_can_handle_contract():
         "linkedin": "https://www.linkedin.com/in/test",
         "rss": "https://example.com/feed.xml",
         "xueqiu": "https://xueqiu.com/S/SH600519",
+        "siyuan": "siyuan://blocks/20210808180117-czj9bvb",
         "exa_search": "https://example.com",
         "web": "https://example.com",
     }

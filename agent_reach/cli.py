@@ -34,6 +34,7 @@ _SENSITIVE_CONFIG_KEYS = {
     "github-token",
     "groq-key",
     "openai-key",
+    "siyuan-token",
     "twitter-cookies",
     "xhs-cookies",
 }
@@ -108,7 +109,7 @@ def main():
     p_conf = sub.add_parser("configure", help="Set a config value or auto-extract from browser")
     p_conf.add_argument("key", nargs="?", default=None,
                         choices=["proxy", "github-token", "groq-key", "openai-key",
-                                 "twitter-cookies", "youtube-cookies",
+                                 "siyuan-token", "twitter-cookies", "youtube-cookies",
                                  "xhs-cookies"],
                         help="What to configure (omit if using --from-browser)")
     p_conf.add_argument("value", nargs="*", help="The value(s) to set")
@@ -1583,6 +1584,11 @@ def _cmd_configure(args):
     elif args.key == "openai-key":
         config.set("openai_api_key", value)
         print("✅ OpenAI key configured!")
+
+    elif args.key == "siyuan-token":
+        config.set("siyuan_api_token", value)
+        print("✅ 思源笔记 API Token 已保存")
+        print("  确认思源笔记已启动后运行：agent-reach doctor")
 
 
 def _cmd_transcribe(args):
