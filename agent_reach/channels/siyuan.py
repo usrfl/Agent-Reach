@@ -12,6 +12,7 @@ outline.  Mutating endpoints (create/update/delete block) are intentionally
 excluded — agents that need to write should call the SiYuan API directly.
 """
 
+import ipaddress
 import json
 import os
 import urllib.request
@@ -25,33 +26,52 @@ _UA = "agent-reach/1.0"
 _TIMEOUT = 10
 _MAX_RESPONSE_BYTES = 1024 * 1024
 
-# Only loopback targets are allowed — SiYuan's kernel API is local-only and
-# exposing it to the public internet is unsafe.  Reject everything else before
-# a single byte leaves the process.
-_ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
+# Loopback is the safe default.  Remote targets (phone on LAN, tunnel, etc.)
+# are allowed only when the user explicitly configures ``siyuan_api_url`` —
+# never the default.  Embedded credentials are always rejected; the API token
+# travels in the Authorization header instead.
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 
 
 class SiYuanAPIError(RuntimeError):
     """Raised when the SiYuan kernel returns a non-zero ``code``."""
 
 
-def _validate_api_url(base_url: str) -> None:
-    """Reject any base URL that is not an explicit loopback HTTP(S) target."""
+def _is_loopback(host: str) -> bool:
+    if host in _LOOPBACK_HOSTS:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_api_url(base_url: str, *, allow_remote: bool = False) -> None:
+    """Validate a SiYuan API base URL.
+
+    Loopback targets are always accepted.  Remote targets are accepted only
+    when ``allow_remote`` is True (i.e. the user explicitly set the URL in
+    config).  Embedded credentials are rejected regardless.
+    """
     try:
         parsed = urlsplit(base_url)
     except (TypeError, ValueError) as exc:
         raise ValueError("invalid SiYuan API URL") from exc
     host = (parsed.hostname or "").lower().rstrip(".")
-    port = parsed.port
     if (
         parsed.scheme.lower() not in {"http", "https"}
-        or host not in _ALLOWED_HOSTS
+        or not host
         or parsed.username is not None
         or parsed.password is not None
     ):
         raise ValueError(
-            "SiYuan API must be a loopback URL "
-            "(http://127.0.0.1:6806 or http://localhost:6806)"
+            "SiYuan API URL must be http(s) without embedded credentials"
+        )
+    if not allow_remote and not _is_loopback(host):
+        raise ValueError(
+            "SiYuan API default target must be loopback "
+            "(http://127.0.0.1:6806).  To connect to a phone or remote "
+            "instance, set siyuan_api_url in config explicitly."
         )
     # Port may be None (default) or any int — SiYuan can run on custom ports.
 
@@ -66,6 +86,19 @@ def _api_base(config=None) -> str:
     if env_url:
         return env_url.rstrip("/")
     return _DEFAULT_API_URL
+
+
+def _allow_remote(config=None) -> bool:
+    """Remote targets are allowed only when the URL was explicitly set.
+
+    A configured URL means the user opted into a non-default (likely remote)
+    target; the default URL is always loopback and needs no flag.
+    """
+    if config is not None and config.get("siyuan_api_url"):
+        return True
+    if os.environ.get("SIYUAN_API_URL"):
+        return True
+    return False
 
 
 def _api_token(config=None) -> Optional[str]:
@@ -86,7 +119,7 @@ def _post(endpoint: str, payload: dict, config=None) -> Any:
     Raises ``SiYuanAPIError`` when the kernel reports ``code != 0``.
     """
     base = _api_base(config)
-    _validate_api_url(base)
+    _validate_api_url(base, allow_remote=_allow_remote(config))
     url = f"{base}{endpoint}"
     body = json.dumps(payload or {}).encode("utf-8")
     headers = {"Content-Type": "application/json", "User-Agent": _UA}
@@ -133,7 +166,7 @@ class SiYuanChannel(Channel):
             return True
         host = (parsed.hostname or "").lower().rstrip(".")
         port = parsed.port
-        return host in _ALLOWED_HOSTS and (port is None or port == 6806)
+        return host in _LOOPBACK_HOSTS and (port is None or port == 6806)
 
     # ------------------------------------------------------------------ #
     # Health check

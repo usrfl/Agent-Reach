@@ -48,16 +48,42 @@ def test_can_handle_rejects_non_siyuan_urls():
 @pytest.mark.parametrize(
     "url",
     [
-        "http://example.com:6806",
-        "https://siyuan.evil.test",
-        "http://user:pass@127.0.0.1:6806",
-        "ftp://127.0.0.1:6806",
-        "not-a-url",
+        "http://user:pass@127.0.0.1:6806",   # embedded credentials — always rejected
+        "ftp://127.0.0.1:6806",              # non-http scheme — always rejected
+        "not-a-url",                         # malformed — always rejected
+        "",                                   # empty — always rejected
     ],
 )
-def test_validate_api_url_rejects_non_loopback(url):
+def test_validate_api_url_rejects_unsafe_urls_always(url):
     with pytest.raises(ValueError):
         s._validate_api_url(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com:6806",
+        "https://siyuan.evil.test",
+        "http://192.168.1.50:6806",
+    ],
+)
+def test_validate_api_url_rejects_remote_without_opt_in(url):
+    # Without allow_remote, non-loopback targets are rejected.
+    with pytest.raises(ValueError):
+        s._validate_api_url(url, allow_remote=False)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com:6806",
+        "https://siyuan.evil.test",
+        "http://192.168.1.50:6806",
+    ],
+)
+def test_validate_api_url_allows_remote_with_opt_in(url):
+    # Explicit opt-in (config set) permits remote/phone URLs.
+    s._validate_api_url(url, allow_remote=True)  # must not raise
 
 
 @pytest.mark.parametrize(
@@ -217,19 +243,57 @@ def test_post_uses_configured_base_url():
     assert captured["url"] == "http://localhost:6807/api/system/version"
 
 
-def test_post_rejects_public_url_before_network(monkeypatch):
-    """A misconfigured public URL must never hit the network."""
-    monkeypatch.setattr(s.urllib.request, "urlopen", _assert_not_called)
-    with pytest.raises(ValueError):
+def test_post_default_url_is_loopback():
+    """Without explicit config, the base URL is always loopback (safe default)."""
+    captured = {}
+
+    class _CaptureResponse:
+        def __init__(self, req):
+            captured["url"] = req.full_url
+
+        def read(self, _n):
+            return json.dumps({"code": 0, "msg": "", "data": None}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    with patch.object(
+        s.urllib.request, "urlopen", side_effect=lambda req, timeout=None: _CaptureResponse(req)
+    ):
+        s._post("/api/system/version", {}, None)
+    # Default target is loopback — never a public host.
+    assert captured["url"].startswith("http://127.0.0.1:6806/")
+
+
+def test_post_explicit_remote_url_reaches_network():
+    """When the user sets siyuan_api_url, remote targets are allowed."""
+    captured = {}
+
+    class _CaptureResponse:
+        def __init__(self, req):
+            captured["url"] = req.full_url
+
+        def read(self, _n):
+            return json.dumps({"code": 0, "msg": "", "data": None}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    with patch.object(
+        s.urllib.request, "urlopen", side_effect=lambda req, timeout=None: _CaptureResponse(req)
+    ):
         s._post(
             "/api/system/version",
             {},
-            {"siyuan_api_url": "http://evil.example.com:6806"},
+            {"siyuan_api_url": "http://192.168.1.50:6806"},
         )
-
-
-def _assert_not_called(*_a, **_k):
-    raise AssertionError("urlopen must not be called for a public URL")
+    assert captured["url"] == "http://192.168.1.50:6806/api/system/version"
 
 
 # --- list_notebooks ---

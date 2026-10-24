@@ -109,7 +109,8 @@ def main():
     p_conf = sub.add_parser("configure", help="Set a config value or auto-extract from browser")
     p_conf.add_argument("key", nargs="?", default=None,
                         choices=["proxy", "github-token", "groq-key", "openai-key",
-                                 "siyuan-token", "twitter-cookies", "youtube-cookies",
+                                 "siyuan-token", "siyuan-url",
+                                 "twitter-cookies", "youtube-cookies",
                                  "xhs-cookies"],
                         help="What to configure (omit if using --from-browser)")
     p_conf.add_argument("value", nargs="*", help="The value(s) to set")
@@ -1588,6 +1589,12 @@ def _cmd_configure(args):
     elif args.key == "siyuan-token":
         config.set("siyuan_api_token", value)
         print("✅ 思源笔记 API Token 已保存")
+        print("  确认思源笔记已启动后运行：agent-reach doctor")
+
+    elif args.key == "siyuan-url":
+        config.set("siyuan_api_url", value.rstrip("/"))
+        print(f"✅ 思源笔记 API 地址已设为：{value.rstrip('/')}")
+        print("  连接手机/远程实例时使用，如 http://192.168.1.50:6806")
         print("  确认思源笔记已启动后运行：agent-reach doctor")
 
 
