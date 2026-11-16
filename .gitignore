@@ -8,6 +8,9 @@ build/
 .env
 .agent-reach/
 *.log
+node_modules/
+dist/
+.vite/
 
 # Claude Code personal permission settings — local only, never commit
 .claude/settings.local.json
